@@ -79,6 +79,34 @@ class NormalityTest:
             "estimated_std": float(std)
         }
 
+    def qq_plot_data(self, data: np.ndarray) -> Dict[str, Any]:
+        data = np.array(data, dtype=float)
+        self._validate_data(data)
+        
+        n = len(data)
+        
+        res = stats.probplot(data, dist="norm")
+        theoretical_quantiles, ordered_values = res[0]
+        slope, intercept, r = res[1]
+        
+        ref_line_x = np.array([theoretical_quantiles.min(), theoretical_quantiles.max()])
+        ref_line_y = slope * ref_line_x + intercept
+        
+        return {
+            "sample_size": n,
+            "theoretical_quantiles": theoretical_quantiles.tolist(),
+            "sample_quantiles": ordered_values.tolist(),
+            "reference_line": {
+                "slope": float(slope),
+                "intercept": float(intercept),
+                "r_squared": float(r ** 2),
+                "x": ref_line_x.tolist(),
+                "y": ref_line_y.tolist()
+            },
+            "sample_mean": float(np.mean(data)),
+            "sample_std": float(np.std(data, ddof=1))
+        }
+
     def auto_test(self, data: np.ndarray) -> Dict[str, Any]:
         data = np.array(data, dtype=float)
         self._validate_data(data)
@@ -140,6 +168,7 @@ class NormalityTest:
         
         return {
             "tests": results,
+            "qq_plot": self.qq_plot_data(data),
             "overall": {
                 "is_normal": overall_normal,
                 "conclusion": overall_conclusion,

@@ -20,6 +20,10 @@ class NormalityTestRequest(BaseModel):
     )
 
 
+class QQPlotRequest(BaseModel):
+    data: List[float] = Field(..., description="待分析的数值数组", min_length=3)
+
+
 @app.get("/")
 async def root():
     return {
@@ -27,6 +31,7 @@ async def root():
         "version": "1.0.0",
         "endpoints": {
             "POST /test": "执行正态性检验",
+            "POST /qq-plot": "获取 QQ 图数据",
             "GET /info": "获取服务说明"
         }
     }
@@ -50,7 +55,12 @@ async def info():
                 "strengths": "对分布形状敏感，不受参数估计影响"
             }
         },
-        "auto_selection_rule": "当样本量 < 50 时自动选择 Shapiro-Wilk，≥ 50 时自动选择 Kolmogorov-Smirnov",
+        "auto_selection_rule": "当样本量 ≤ 5000 时自动选择 Shapiro-Wilk，> 5000 时自动选择 Kolmogorov-Smirnov",
+        "qq_plot": {
+            "name": "QQ 图数据",
+            "description": "输出用于绘制 QQ 图的数据点，包括理论分位数、样本分位数和参考线",
+            "endpoint": "POST /qq-plot"
+        },
         "default_alpha": 0.05
     }
 
@@ -85,6 +95,21 @@ async def perform_test(request: NormalityTestRequest):
         raise HTTPException(status_code=400, detail=str(e))
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"检验失败: {str(e)}")
+
+
+@app.post("/qq-plot")
+async def qq_plot(request: QQPlotRequest):
+    try:
+        tester = NormalityTest()
+        result = tester.qq_plot_data(request.data)
+        return {
+            "success": True,
+            "result": result
+        }
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"QQ 图数据生成失败: {str(e)}")
 
 
 if __name__ == "__main__":
