@@ -3,7 +3,7 @@ from scipy import stats
 from typing import Dict, Any, Optional, Tuple
 
 
-SMALL_SAMPLE_THRESHOLD = 50
+SHAPIRO_WILK_MAX_SAMPLE_SIZE = 5000
 
 
 class NormalityTest:
@@ -30,8 +30,10 @@ class NormalityTest:
         data = np.array(data, dtype=float)
         self._validate_data(data)
         
-        if len(data) > 5000:
-            raise ValueError("Shapiro-Wilk 检验适用于样本量 ≤ 5000 的数据")
+        if len(data) > SHAPIRO_WILK_MAX_SAMPLE_SIZE:
+            raise ValueError(
+                f"Shapiro-Wilk 检验适用于样本量 ≤ {SHAPIRO_WILK_MAX_SAMPLE_SIZE} 的数据"
+            )
         
         stat, p_value = stats.shapiro(data)
         
@@ -83,14 +85,20 @@ class NormalityTest:
         
         n = len(data)
         
-        if n < SMALL_SAMPLE_THRESHOLD:
+        if n <= SHAPIRO_WILK_MAX_SAMPLE_SIZE:
             result = self.shapiro_wilk_test(data)
             result["auto_selected"] = True
-            result["selection_reason"] = f"样本量 {n} < {SMALL_SAMPLE_THRESHOLD}，自动选择 Shapiro-Wilk 检验"
+            result["selection_reason"] = (
+                f"样本量 {n} ≤ {SHAPIRO_WILK_MAX_SAMPLE_SIZE}，"
+                f"自动选择 Shapiro-Wilk 检验"
+            )
         else:
             result = self.kolmogorov_smirnov_test(data)
             result["auto_selected"] = True
-            result["selection_reason"] = f"样本量 {n} ≥ {SMALL_SAMPLE_THRESHOLD}，自动选择 Kolmogorov-Smirnov 检验"
+            result["selection_reason"] = (
+                f"样本量 {n} > {SHAPIRO_WILK_MAX_SAMPLE_SIZE}，"
+                f"Shapiro-Wilk 检验不可用，自动切换至 Kolmogorov-Smirnov 检验"
+            )
         
         return result
 
@@ -101,15 +109,25 @@ class NormalityTest:
         n = len(data)
         results = {}
         
-        if n <= 5000:
+        if n <= SHAPIRO_WILK_MAX_SAMPLE_SIZE:
             results["shapiro_wilk"] = self.shapiro_wilk_test(data)
+        else:
+            results["shapiro_wilk"] = {
+                "skipped": True,
+                "reason": (
+                    f"样本量 {n} > {SHAPIRO_WILK_MAX_SAMPLE_SIZE}，"
+                    f"Shapiro-Wilk 检验不可用，已自动跳过"
+                )
+            }
         
         results["kolmogorov_smirnov"] = self.kolmogorov_smirnov_test(data)
         
-        sw_result = results.get("shapiro_wilk")
+        sw_result = results["shapiro_wilk"]
         ks_result = results["kolmogorov_smirnov"]
         
-        if sw_result:
+        sw_available = not sw_result.get("skipped", False)
+        
+        if sw_available:
             overall_normal = sw_result["is_normal"] and ks_result["is_normal"]
             overall_conclusion = (
                 "综合两种检验，数据服从正态分布"

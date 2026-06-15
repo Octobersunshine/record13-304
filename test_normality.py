@@ -1,6 +1,6 @@
 import numpy as np
 import unittest
-from normality_test import NormalityTest
+from normality_test import NormalityTest, SHAPIRO_WILK_MAX_SAMPLE_SIZE
 
 
 class TestNormalityTest(unittest.TestCase):
@@ -36,19 +36,31 @@ class TestNormalityTest(unittest.TestCase):
         result = self.tester.kolmogorov_smirnov_test(data)
         self.assertFalse(result["is_normal"])
 
-    def test_auto_test_small_sample(self):
-        data = np.random.normal(0, 1, 30)
+    def test_auto_test_within_shapiro_limit(self):
+        data = np.random.normal(0, 1, 100)
         result = self.tester.auto_test(data)
         self.assertEqual(result["test_name"], "Shapiro-Wilk")
         self.assertTrue(result["auto_selected"])
         self.assertIn("自动选择 Shapiro-Wilk 检验", result["selection_reason"])
 
-    def test_auto_test_large_sample(self):
-        data = np.random.normal(0, 1, 100)
+    def test_auto_test_exceeds_shapiro_limit(self):
+        data = np.random.normal(0, 1, 6000)
         result = self.tester.auto_test(data)
         self.assertEqual(result["test_name"], "Kolmogorov-Smirnov")
         self.assertTrue(result["auto_selected"])
-        self.assertIn("自动选择 Kolmogorov-Smirnov 检验", result["selection_reason"])
+        self.assertIn("Shapiro-Wilk 检验不可用，自动切换至", result["selection_reason"])
+
+    def test_auto_test_at_shapiro_boundary(self):
+        data = np.random.normal(0, 1, 5000)
+        result = self.tester.auto_test(data)
+        self.assertEqual(result["test_name"], "Shapiro-Wilk")
+        self.assertTrue(result["auto_selected"])
+
+    def test_auto_test_just_above_shapiro_boundary(self):
+        data = np.random.normal(0, 1, 5001)
+        result = self.tester.auto_test(data)
+        self.assertEqual(result["test_name"], "Kolmogorov-Smirnov")
+        self.assertIn("Shapiro-Wilk 检验不可用", result["selection_reason"])
 
     def test_comprehensive_test(self):
         data = np.random.normal(0, 1, 30)
@@ -62,11 +74,21 @@ class TestNormalityTest(unittest.TestCase):
         for key in stats_keys:
             self.assertIn(key, result["overall"]["descriptive_stats"])
 
-    def test_comprehensive_test_large_sample(self):
+    def test_comprehensive_test_large_sample_within_limit(self):
         data = np.random.normal(0, 1, 100)
         result = self.tester.comprehensive_test(data)
         self.assertIn("shapiro_wilk", result["tests"])
         self.assertIn("kolmogorov_smirnov", result["tests"])
+        self.assertNotIn("skipped", result["tests"]["shapiro_wilk"])
+
+    def test_comprehensive_test_exceeds_shapiro_limit(self):
+        data = np.random.normal(0, 1, 6000)
+        result = self.tester.comprehensive_test(data)
+        sw = result["tests"]["shapiro_wilk"]
+        self.assertTrue(sw.get("skipped", False))
+        self.assertIn("Shapiro-Wilk 检验不可用", sw["reason"])
+        self.assertIn("kolmogorov_smirnov", result["tests"])
+        self.assertEqual(result["overall"]["is_normal"], result["tests"]["kolmogorov_smirnov"]["is_normal"])
 
     def test_insufficient_data(self):
         with self.assertRaises(ValueError) as context:
@@ -92,7 +114,7 @@ class TestNormalityTest(unittest.TestCase):
         data = np.random.normal(0, 1, 6000)
         with self.assertRaises(ValueError) as context:
             self.tester.shapiro_wilk_test(data)
-        self.assertIn("≤ 5000", str(context.exception))
+        self.assertIn(f"≤ {SHAPIRO_WILK_MAX_SAMPLE_SIZE}", str(context.exception))
 
     def test_custom_alpha(self):
         tester = NormalityTest(alpha=0.01)
